@@ -58,17 +58,21 @@ namespace SudokuSolver.Objects
 
         public bool LoadTable(string values)
         {
-            var strArray = values.Split(',');
-            for (int i = 0; i < strArray.Length; i++)
+            try
             {
-                if (string.IsNullOrWhiteSpace(strArray[i])) continue;
+                var strArray = values.Split(',');
+                for (int i = 0; i < strArray.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(strArray[i])) continue;
 
-                _table[i / 9, i % 9] = Convert.ToInt32(strArray[i]);
+                    _table[i / 9, i % 9] = Convert.ToInt32(strArray[i]);
+                }
             }
-
-            Validate();
-
-            return true;
+            catch (System.Exception)
+            {
+                return false;
+            }
+            return Validate();
         }
 
         public void Solve()
