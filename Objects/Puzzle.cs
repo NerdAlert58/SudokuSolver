@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace SudokuSolver.Objects
 {
@@ -10,16 +11,26 @@ namespace SudokuSolver.Objects
         private bool _finished { get; set; }
         private bool _isSolvable { get; set; }
         private int[,] _table { get; set; }
+        private IDictionary<(int, int), HashSet<int>> _options { get; set; }
 
         public Puzzle()
         {
             _finished = false;
             _isSolvable = true;
             _table = new int[9, 9];
+            _options = new Dictionary<(int, int), HashSet<int>>();
+            for (int i = 0; i < 9; i++)
+            {
+                for (int j = 0; j < 9; j++)
+                {
+                    _options[(i, j)] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+                }
+            }
         }
 
         public void Display()
         {
+            Console.Clear();
             if (_table == null || _table.Length == 0)
             {
                 return;
@@ -54,6 +65,54 @@ namespace SudokuSolver.Objects
             }
 
             System.Console.WriteLine(sb.ToString());
+            Thread.Sleep(1);
+        }
+
+        public void SeeAllOptions(int i, int j)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"[({i},{j})]: ");
+            foreach (var value in _options[(i, j)])
+            {
+                sb.Append(value);
+                sb.Append(", ");
+            }
+            System.Console.WriteLine(sb.ToString());
+        }
+        private void RemoveOptions(int row, int column)
+        {
+            if (!_options.TryGetValue((row, column), out var set) || set.Count > 1) return;
+
+            var optionToRemove = set.ToList()[0];
+            for (int i = 0; i < 9; i++)
+            {
+                if (i == row) continue;
+                if (_options.TryGetValue((i, column), out var rowSet))
+                {
+                    rowSet.Remove(optionToRemove);
+                }
+            }
+            for (int i = 0; i < 9; i++)
+            {
+                if (i == column) continue;
+                if (_options.TryGetValue((row, i), out var columnSet))
+                {
+                    columnSet.Remove(optionToRemove);
+                }
+            }
+
+            var (rowCorner, columnCorner) = GetSquare_TopLeft(row, column);
+            for (int m = rowCorner; m < (rowCorner + 3); m++)
+            {
+                for (int n = columnCorner; n < (columnCorner + 3); n++)
+                {
+                    if (m == row && n == column) continue;
+                    if (_options.TryGetValue((m, n), out var squareSet) && squareSet.Count > 1)
+                    {
+                        squareSet.Remove(optionToRemove);
+                    }
+                }
+            }
         }
 
         public bool LoadTable(string values)
@@ -65,8 +124,18 @@ namespace SudokuSolver.Objects
                 {
                     if (string.IsNullOrWhiteSpace(strArray[i])) continue;
 
-                    _table[i / 9, i % 9] = Convert.ToInt32(strArray[i]);
+                    var row = i / 9;
+                    var column = i % 9;
+                    var num = Convert.ToInt32(strArray[i]);
+                    if (num == 0)
+                    {
+                        System.Console.WriteLine("WTF?!");
+                    }
+                    _table[row, column] = num;
+                    _options[(row, column)] = new HashSet<int>() { num };
+                    RemoveOptions(row, column);
                 }
+                Display();
             }
             catch (System.Exception)
             {
@@ -83,8 +152,9 @@ namespace SudokuSolver.Objects
                 {
                     for (int j = 0; j < 9; j++)
                     {
+                        SeeAllOptions(i, j);
                         var remaining = SimpleFills(i, j);
-                        System.Console.WriteLine(remaining.Count);
+                        // System.Console.WriteLine(remaining.Count);
                         switch (remaining.Count)
                         {
                             case 1:
@@ -99,7 +169,22 @@ namespace SudokuSolver.Objects
                             case 7:
                             case 8:
                             case 9:
+                                // For cases 2-9, we need to run the gauntlet of methods to "logic" a square to fill.
+                                // Each square:
+                                // Assign all available options to the blank squares and then remove values if they are matched in row or column
+                                if (_options.TryGetValue((i, j), out var spaceSet) && spaceSet.Count == 1)
+                                {
+                                    var found = spaceSet.ToList()[0];
+                                    if (found == 0)
+                                    {
+                                        System.Console.WriteLine("HOW?!");
+                                    }
+                                    if (_table[i, j] != 0)
+                                        _table[i, j] = found;
 
+                                    RemoveOptions(i, j);
+                                    Display();
+                                }
                                 break;
                             default:
                                 // Do nothing
@@ -113,7 +198,7 @@ namespace SudokuSolver.Objects
         private HashSet<int> SimpleFills(int i, int j)
         {
             var known = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-            if (_table[i, j] == 0)
+            if (_table[i, j] != 0)
             {
                 return known;
             }
@@ -132,6 +217,30 @@ namespace SudokuSolver.Objects
                 known.Remove(_table[l, column]);
             }
             // check square
+            (row, column) = GetSquare_TopLeft(i, j);
+            if (row < 0 || column < 0)
+            {
+                throw new ArgumentException($"GetSquare_TopLeft - IndexOutOfBound: {i}:{j}");
+            }
+
+            for (int m = row; m < (row + 3); m++)
+            {
+                for (int n = column; n < (column + 3); n++)
+                {
+                    if (_table[m, n] == 0) continue;
+                    known.Remove(_table[m, n]);
+                }
+            }
+            return known;
+        }
+
+        private (int, int) GetSquare_TopLeft(int i, int j)
+        {
+            if (i < 0 || i > 9 || j < 0 || j > 9)
+            {
+                return (-1, -1);
+            }
+            int row, column;
             if (i < 3)
             {
                 row = 0;
@@ -156,16 +265,7 @@ namespace SudokuSolver.Objects
             {
                 column = 6;
             }
-
-            for (int m = row; m < (row + 3); m++)
-            {
-                for (int n = column; n < (column + 3); n++)
-                {
-                    if (_table[m, n] == 0) continue;
-                    known.Remove(_table[m, n]);
-                }
-            }
-            return known;
+            return (row, column);
         }
 
         private bool Validate()
