@@ -179,7 +179,7 @@ namespace SudokuSolver.Objects
                                     {
                                         System.Console.WriteLine("HOW?!");
                                     }
-                                    if (_table[i, j] != 0)
+                                    if (_table[i, j] == 0)
                                         _table[i, j] = found;
 
                                     RemoveOptions(i, j);
