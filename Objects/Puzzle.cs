@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -13,6 +14,7 @@ namespace SudokuSolver.Objects
         private bool _finished { get; set; }
         private bool _isSolvable { get; set; }
         private int[,] _table { get; set; }
+        private IList<string> _testPuzzles { get; set; }
         private IDictionary<(int, int), HashSet<int>> _options { get; set; }
         private IDictionary<int, HashSet<int>> _vertical { get; set; }
         private IDictionary<int, HashSet<int>> _horizontal { get; set; }
@@ -28,6 +30,30 @@ namespace SudokuSolver.Objects
             _vertical = new Dictionary<int, HashSet<int>>();
             _horizontal = new Dictionary<int, HashSet<int>>();
             _squares = new Dictionary<int, HashSet<int>>();
+            _events = new List<Event>();
+            _testPuzzles = new List<string>();
+            for (int i = 0; i < 9; i++)
+            {
+                _vertical[i] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+                _horizontal[i] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+                _squares[i] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+                for (int j = 0; j < 9; j++)
+                {
+                    _options[(i, j)] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+                }
+            }
+        }
+
+        public void ResetPuzzle()
+        {
+            _finished = false;
+            _isSolvable = true;
+            _table = new int[9, 9];
+            _options = new Dictionary<(int, int), HashSet<int>>();
+            _vertical = new Dictionary<int, HashSet<int>>();
+            _horizontal = new Dictionary<int, HashSet<int>>();
+            _squares = new Dictionary<int, HashSet<int>>();
+            _events = new List<Event>();
             for (int i = 0; i < 9; i++)
             {
                 _vertical[i] = new HashSet<int>() { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
@@ -77,7 +103,7 @@ namespace SudokuSolver.Objects
             }
 
             System.Console.WriteLine(sb.ToString());
-            Thread.Sleep(1);
+            // Thread.Sleep(1);
         }
 
         public void SeeAllOptions(int i, int j)
@@ -134,22 +160,31 @@ namespace SudokuSolver.Objects
             }
         }
 
+        public string[] ConvertPuzzleFromCSV(string values)
+        {
+            return values.Split(',');
+        }
         public bool LoadTable(string values)
         {
+            if (string.IsNullOrWhiteSpace(values)) return false;
+            string[] strArray;
+            if (values.Contains(","))
+            {
+                strArray = ConvertPuzzleFromCSV(values);
+            }
+            else
+            {
+                strArray = values.ToCharArray().Select(c => c.ToString()).ToArray();
+            }
             try
             {
-                var strArray = values.Split(',');
                 for (int i = 0; i < strArray.Length; i++)
                 {
-                    if (string.IsNullOrWhiteSpace(strArray[i])) continue;
+                    if (string.Equals(strArray[i], "0") || string.IsNullOrWhiteSpace(strArray[i])) continue;
 
                     var row = i / 9;
                     var column = i % 9;
                     var num = Convert.ToInt32(strArray[i]);
-                    if (num == 0)
-                    {
-                        System.Console.WriteLine("WTF?!");
-                    }
                     _table[row, column] = num;
                     _options[(row, column)] = new HashSet<int>() { num };
                     if (_vertical.TryGetValue(row, out var verticalSet) && verticalSet.Contains(num))
@@ -176,6 +211,38 @@ namespace SudokuSolver.Objects
             return Validate();
         }
 
+        public void RunTheGauntlet()
+        {
+            for (int i = 0; i < _testPuzzles.Count; i++)
+            {
+                var values = _testPuzzles[i];
+                ResetPuzzle();
+                if (LoadTable(values))
+                {
+                    System.Console.WriteLine(values);
+                    Solve();
+                }
+                else
+                {
+                    System.Console.WriteLine(values);
+                    System.Console.WriteLine("Puzzle Failed!!!");
+                }
+
+            }
+        }
+        public void LoadTestPuzzles()
+        {
+            string line;
+            System.IO.StreamReader file = new System.IO.StreamReader(@"TestPuzzles.txt");
+            while ((line = file.ReadLine()) != null)
+            {
+                if (!line.StartsWith("#") && !string.IsNullOrWhiteSpace(line))
+                {
+                    _testPuzzles.Add(line);
+                }
+            }
+        }
+
         private int GetSquarePosition(int row, int column)
         {
             var (x, y) = GetSquare_TopLeft(row, column);
@@ -190,6 +257,8 @@ namespace SudokuSolver.Objects
         {
             var rootStopWatch = new Stopwatch();
             rootStopWatch.Start();
+            int maxLoops = 100000;
+            int counter = 0;
             while (!_finished)
             {
                 var stopWatch = new Stopwatch();
@@ -199,11 +268,12 @@ namespace SudokuSolver.Objects
 
                 for (int i = 0; i < 9; i++)
                 {
+                    if (_finished) break;
                     for (int j = 0; j < 9; j++)
                     {
+                        if (_finished) break;
                         // SeeAllOptions(i, j);
                         var remaining = SimpleFills(i, j);
-                        // System.Console.WriteLine(remaining.Count);
                         switch (remaining.Count)
                         {
                             case 1:
@@ -223,10 +293,6 @@ namespace SudokuSolver.Objects
                                 if (_options.TryGetValue((i, j), out var spaceSet) && spaceSet.Count == 1)
                                 {
                                     var found = spaceSet.ToList()[0];
-                                    if (found == 0)
-                                    {
-                                        System.Console.WriteLine("HOW?!");
-                                    }
                                     AddNewValue(i, j, found, "NoOtherOption");
                                 }
                                 break;
@@ -243,7 +309,12 @@ namespace SudokuSolver.Objects
                                         }
                                     }
                                 }
-                                if (missing.Count == 0) _finished = true;
+                                if (missing.Count == 0)
+                                {
+                                    _finished = true;
+                                    Display();
+                                    System.Console.WriteLine("Finished!!!");
+                                }
                                 break;
                         }
                     }
@@ -255,11 +326,19 @@ namespace SudokuSolver.Objects
                 stopWatch.Stop();
                 var ts = stopWatch.ElapsedMilliseconds;
                 // System.Console.WriteLine($"Loop time: {ts} ms.");
+
+                counter++;
+                if (counter >= maxLoops)
+                {
+                    _finished = true;
+                    System.Console.WriteLine("Incomplete!!!");
+                    Display();
+                }
             }
             rootStopWatch.Stop();
             var rootSpan = rootStopWatch.ElapsedMilliseconds;
             System.Console.WriteLine($"Total time: {rootSpan} ms.");
-            System.Console.WriteLine("Finished!!!");
+
         }
 
         /// <summary>
@@ -293,7 +372,7 @@ namespace SudokuSolver.Objects
 
             UpdateOptions(row, column);
             AddEvent(method);
-            Display();
+            // Display();
         }
 
         private void AddEvent(string method)
@@ -364,9 +443,9 @@ namespace SudokuSolver.Objects
                         sb.Append(item);
                         sb.Append(", ");
                     }
-                    System.Console.WriteLine(sb.ToString());
+                    // System.Console.WriteLine(sb.ToString());
 
-                    SeeAllOptions(i, j);
+                    // SeeAllOptions(i, j);
                     if (possibles.Count == 1)
                     {
                         AddNewValue(i, j, possibles.ToList()[0], "TestByCrossReference - Intersection");
