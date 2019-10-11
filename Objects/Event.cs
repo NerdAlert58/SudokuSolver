@@ -6,6 +6,7 @@ namespace SudokuSolver.Objects
     {
         public int Id { get; set; }
         public int[,] Table { get; set; }
+        public IDictionary<(int, int), HashSet<int>> Options { get; set; }
         public string MethodUsed { get; set; }
     }
 }
